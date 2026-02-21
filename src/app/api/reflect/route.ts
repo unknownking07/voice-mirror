@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { MIRROR_SYSTEM_PROMPT } from '@/lib/prompts';
 
 export const maxDuration = 60;
@@ -169,20 +168,37 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Step 2: LLM Reflection via Claude
+    // Step 2: LLM Reflection via Claude (direct REST API — more reliable on serverless)
     let reflection: string;
     try {
-        const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-        const message = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 512,
-            system: MIRROR_SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: transcript }],
+        const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 512,
+                system: MIRROR_SYSTEM_PROMPT,
+                messages: [{ role: 'user', content: transcript }],
+            }),
         });
 
-        reflection = (message.content[0] as { type: string; text: string }).text;
+        if (!claudeResponse.ok) {
+            const claudeError = await claudeResponse.json().catch(() => ({}));
+            console.error('Claude API error:', claudeResponse.status, claudeError);
+            return NextResponse.json(
+                { error: `Reflection failed: ${claudeError.error?.message || claudeResponse.statusText}` },
+                { status: 500 }
+            );
+        }
+
+        const claudeData = await claudeResponse.json();
+        reflection = claudeData.content?.[0]?.text;
     } catch (err) {
-        console.error('Claude API error:', err);
+        console.error('Claude API exception:', err);
         return NextResponse.json({ error: `Reflection failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
     }
 
