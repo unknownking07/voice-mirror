@@ -274,9 +274,10 @@ export async function POST(req: NextRequest) {
 
     const audioBase64 = audioBuffer.toString('base64');
 
-    // Delete the MiniMax voice clone after successful TTS to free up the slot (fire-and-forget)
+    // Delete the MiniMax voice clone after successful TTS to free up the slot
+    // Must be awaited — Vercel serverless terminates execution after response is sent
     if (provider === 'minimax') {
-        deleteMiniMaxVoice(voiceId, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+        await deleteMiniMaxVoice(voiceId, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
     }
 
     return NextResponse.json({
