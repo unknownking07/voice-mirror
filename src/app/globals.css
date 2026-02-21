@@ -1229,8 +1229,44 @@ body {
 /* --- Done Actions (Design 4 controls) --- */
 .done-actions {
   display: flex;
+  align-items: center;
   gap: 1.5rem;
   margin-top: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* --- Inline Speed Controls (WhatsApp-style) --- */
+.inline-speed-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.inline-speed-btn {
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.inline-speed-btn:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+.inline-speed-btn.active {
+  background: var(--accent-violet);
+  border-color: var(--accent-violet-light);
+  color: white;
+  box-shadow: 0 0 12px var(--accent-glow-subtle);
 }
 
 /* --- Footer Controls (Design 2) --- */

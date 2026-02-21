@@ -117,7 +117,7 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
             const formData = new FormData();
             formData.append('audio', blob, 'recording.webm');
             formData.append('voiceId', voiceId);
-            formData.append('speed', voiceSpeed.toString());
+            formData.append('speed', '1');
             formData.append('provider', provider);
 
             const response = await fetch('/api/reflect', { method: 'POST', body: formData });
@@ -152,6 +152,7 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
             if (reflection.audioUrl && audioRef.current) {
                 setPhase('speaking');
                 audioRef.current.src = reflection.audioUrl;
+                audioRef.current.playbackRate = voiceSpeed;
                 audioRef.current.onended = () => setPhase('done');
                 audioRef.current.onerror = () => setPhase('done');
                 await audioRef.current.play();
@@ -162,12 +163,13 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
             setError(err instanceof Error ? err.message : 'Something went wrong');
             setPhase('idle');
         }
-    }, [stopRecording, voiceId, voiceSpeed, provider]);
+    }, [stopRecording, voiceId, voiceSpeed, provider, onVoiceExpired]);
 
     const handleReplay = () => {
         if (currentReflection?.audioUrl && audioRef.current) {
             setPhase('speaking');
             audioRef.current.currentTime = 0;
+            audioRef.current.playbackRate = voiceSpeed;
             audioRef.current.onended = () => setPhase('done');
             audioRef.current.play();
         }
@@ -176,6 +178,10 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
     const handleSpeedChange = (speed: number) => {
         setVoiceSpeed(speed);
         localStorage.setItem('mirror_voice_speed', speed.toString());
+        // Apply immediately if audio is playing
+        if (audioRef.current) {
+            audioRef.current.playbackRate = speed;
+        }
     };
 
     const getOrbClass = () => {
@@ -304,6 +310,18 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
                             <p className="reflection-text">&ldquo;{currentReflection.reflection}&rdquo;</p>
                         </div>
 
+                        <div className="inline-speed-controls">
+                            {[1, 1.5, 2].map((s) => (
+                                <button
+                                    key={s}
+                                    className={`inline-speed-btn ${voiceSpeed === s ? 'active' : ''}`}
+                                    onClick={() => handleSpeedChange(s)}
+                                >
+                                    {s}x
+                                </button>
+                            ))}
+                        </div>
+
                         <div className="status-label visible">echoing back</div>
                     </>
                 )}
@@ -324,6 +342,19 @@ export default function MirrorSession({ voiceId, provider, onVoiceExpired }: Mir
                                 <button className="btn-ghost" onClick={handleReplay}>
                                     Replay
                                 </button>
+                            )}
+                            {currentReflection.audioUrl && (
+                                <div className="inline-speed-controls">
+                                    {[1, 1.5, 2].map((s) => (
+                                        <button
+                                            key={s}
+                                            className={`inline-speed-btn ${voiceSpeed === s ? 'active' : ''}`}
+                                            onClick={() => handleSpeedChange(s)}
+                                        >
+                                            {s}x
+                                        </button>
+                                    ))}
+                                </div>
                             )}
                             <button className="btn-ghost" onClick={() => setPhase('idle')}>
                                 Speak Again
