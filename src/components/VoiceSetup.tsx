@@ -318,6 +318,27 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                             Speak naturally for at least {provider === 'minimax' ? '60' : '30'} seconds. A quiet room works best.
                         </p>
 
+                        <details className="read-aloud-script">
+                            <summary className="read-aloud-toggle">
+                                📖 Need something to read? Tap here
+                            </summary>
+                            <div className="read-aloud-text">
+                                {provider === 'minimax' ? (
+                                    <>
+                                        <p>I&apos;ve been thinking a lot lately about the things that make life interesting. It&apos;s not always the big moments — sometimes it&apos;s just a quiet morning with a cup of coffee, watching the light change through the window.</p>
+                                        <p>Yesterday I went for a walk and noticed things I usually rush past. The sound of leaves, someone laughing in the distance, the way the sky looks right before sunset. It made me realize how much I miss when I&apos;m stuck in my own head.</p>
+                                        <p>I think the best conversations happen when you&apos;re not trying too hard. When you just let yourself talk about whatever comes to mind. Like right now — I&apos;m not performing, I&apos;m just being myself. And honestly, that&apos;s probably the hardest thing to do sometimes.</p>
+                                        <p>If I could give advice to my younger self, I&apos;d say: don&apos;t rush. The things that matter will find you. And the ones that don&apos;t? You won&apos;t even remember them a year from now.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p>I&apos;ve been thinking about what makes a good day. It&apos;s usually not the big things — it&apos;s a quiet moment, a conversation that surprised me, or just feeling like I was actually present for once.</p>
+                                        <p>Sometimes the best thing you can do is slow down and notice what&apos;s around you. The sounds, the light, the way the air feels. It&apos;s all there, waiting for you to pay attention.</p>
+                                    </>
+                                )}
+                            </div>
+                        </details>
+
                         <div className="recording-controls">
                             {!isRecording && !recordedBlob && (
                                 <div className="record-options">
