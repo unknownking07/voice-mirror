@@ -63,6 +63,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
     const [error, setError] = useState<string | null>(null);
     const [voiceId, setVoiceId] = useState<string | null>(null);
     const [cloneError, setCloneError] = useState(false);
+    const [loadingPreview, setLoadingPreview] = useState(false);
     const [provider, setProvider] = useState<'elevenlabs' | 'minimax'>('elevenlabs');
     const { isRecording, duration, startRecording, stopRecording, error: recorderError } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -177,6 +178,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
     const handlePreview = async () => {
         if (!voiceId) return;
         setError(null);
+        setLoadingPreview(true);
 
         try {
             const previewUrl = provider === 'minimax'
@@ -202,6 +204,8 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Preview failed');
+        } finally {
+            setLoadingPreview(false);
         }
     };
 
@@ -382,13 +386,16 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                             Your voice has been cloned. Listen to a preview to make sure it sounds like you.
                         </p>
                         <div className="preview-actions">
-                            <button className="btn btn-secondary" onClick={handlePreview}>
-                                🔊 Play Preview
+                            <button className="btn btn-secondary" onClick={handlePreview} disabled={loadingPreview}>
+                                {loadingPreview ? '⏳ Generating preview...' : '🔊 Play Preview'}
                             </button>
-                            <button className="btn btn-primary" onClick={handleConfirm}>
+                            <button className="btn btn-primary" onClick={handleConfirm} disabled={loadingPreview}>
                                 Sounds Like Me →
                             </button>
                         </div>
+                        {loadingPreview && (
+                            <p className="preview-hint">This may take a few seconds</p>
+                        )}
                         <button
                             className="btn btn-link"
                             onClick={() => { setStep('recording'); setRecordedBlob(null); setVoiceId(null); }}
