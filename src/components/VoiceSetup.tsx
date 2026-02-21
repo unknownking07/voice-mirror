@@ -10,7 +10,8 @@ function writeString(view: DataView, offset: number, str: string) {
 }
 
 async function convertToWav(blob: Blob): Promise<Blob> {
-    const audioContext = new AudioContext({ sampleRate: 44100 });
+    // 16kHz keeps file size under Vercel's 4.5MB body limit for 60s recordings
+    const audioContext = new AudioContext({ sampleRate: 16000 });
     const arrayBuffer = await blob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
@@ -145,7 +146,13 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                 body: formData,
             });
 
-            const data = await response.json();
+            const text = await response.text();
+            let data: { voice_id?: string; error?: string };
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(response.status === 413 ? 'Audio file is too large. Try a shorter recording.' : `Server error: ${text.substring(0, 100)}`);
+            }
 
             if (!response.ok) {
                 // Check if it's a subscription error
