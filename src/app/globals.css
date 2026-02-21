@@ -16,10 +16,10 @@
   --bg-color: #0D0D0E;
   --surface-color: #161618;
   --text-primary: #E6E5E8;
-  --text-secondary: #7A7585;
-  --text-muted: #5D5666;
+  --text-secondary: #9E99A8;
+  --text-muted: #837B8E;
   --accent-violet: #5D4E70;
-  --accent-violet-light: #7D7289;
+  --accent-violet-light: #A99BBD;
   --accent-glow: rgba(93, 78, 112, 0.4);
   --accent-glow-subtle: rgba(93, 78, 112, 0.15);
   --danger: #8F3A3A;
@@ -268,11 +268,11 @@ body {
 
 .setup-description {
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   color: var(--text-secondary);
   margin-bottom: 28px;
-  font-weight: 300;
+  font-weight: 400;
 }
 
 .setup-description em {
@@ -484,9 +484,9 @@ body {
 }
 
 .provider-option.active {
-  background: rgba(93, 78, 112, 0.15);
-  border-color: rgba(93, 78, 112, 0.5);
-  box-shadow: 0 0 15px rgba(93, 78, 112, 0.15);
+  background: rgba(93, 78, 112, 0.25);
+  border-color: var(--accent-violet-light);
+  box-shadow: 0 0 20px rgba(93, 78, 112, 0.25), inset 0 0 0 1px rgba(169, 155, 189, 0.15);
 }
 
 .provider-name {
@@ -497,13 +497,17 @@ body {
 }
 
 .provider-option.active .provider-name {
-  color: var(--accent-violet-light);
+  color: #C8BBDA;
 }
 
 .provider-desc {
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.provider-option.active .provider-desc {
+  color: var(--text-secondary);
 }
 
 /* --- Skip & Fallback --- */

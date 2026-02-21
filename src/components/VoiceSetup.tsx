@@ -285,14 +285,14 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                                     className={`provider-option ${provider === 'elevenlabs' ? 'active' : ''}`}
                                     onClick={() => setProvider('elevenlabs')}
                                 >
-                                    <span className="provider-name">ElevenLabs</span>
+                                    <span className="provider-name">{provider === 'elevenlabs' ? '✓ ' : ''}ElevenLabs</span>
                                     <span className="provider-desc">Reliable, multilingual</span>
                                 </button>
                                 <button
                                     className={`provider-option ${provider === 'minimax' ? 'active' : ''}`}
                                     onClick={() => setProvider('minimax')}
                                 >
-                                    <span className="provider-name">MiniMax</span>
+                                    <span className="provider-name">{provider === 'minimax' ? '✓ ' : ''}MiniMax</span>
                                     <span className="provider-desc">More identical voice</span>
                                 </button>
                             </div>
