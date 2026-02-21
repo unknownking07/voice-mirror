@@ -14,6 +14,7 @@ interface Reflection {
 interface MirrorSessionProps {
     voiceId: string;
     provider: 'elevenlabs' | 'minimax';
+    onVoiceExpired?: () => void;
 }
 
 const PROMPTS = [
@@ -25,7 +26,7 @@ const PROMPTS = [
     "What do you actually want?",
 ];
 
-export default function MirrorSession({ voiceId, provider }: MirrorSessionProps) {
+export default function MirrorSession({ voiceId, provider, onVoiceExpired }: MirrorSessionProps) {
     const [phase, setPhase] = useState<'idle' | 'recording' | 'thinking' | 'speaking' | 'done'>('idle');
     const [reflections, setReflections] = useState<Reflection[]>([]);
     const [currentReflection, setCurrentReflection] = useState<Reflection | null>(null);
@@ -126,6 +127,12 @@ export default function MirrorSession({ voiceId, provider }: MirrorSessionProps)
                 if (data.error === 'no_speech') {
                     setError(data.message);
                     setPhase('idle');
+                    return;
+                }
+                if (data.error === 'voice_expired') {
+                    setError('Your voice clone has expired. Please re-clone your voice.');
+                    setPhase('idle');
+                    if (onVoiceExpired) onVoiceExpired();
                     return;
                 }
                 throw new Error(data.error || 'Reflection failed');

@@ -49,7 +49,7 @@ export default function Home() {
                 <VoiceSetup onVoiceCloned={handleVoiceCloned} />
             ) : (
                 <>
-                    <MirrorSession voiceId={voiceId} provider={provider} />
+                    <MirrorSession voiceId={voiceId} provider={provider} onVoiceExpired={handleReset} />
                     <button className="reset-button" onClick={handleReset} title="Reset voice profile">
                         Reset Voice
                     </button>

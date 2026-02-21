@@ -36,7 +36,7 @@ async function ttsElevenLabs(text: string, voiceId: string, speed: number, apiKe
     return Buffer.from(arrayBuffer);
 }
 
-async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: string, groupId: string): Promise<Buffer | null> {
+async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: string, groupId: string): Promise<Buffer | null | 'voice_expired'> {
     // MiniMax speed range: 0.5 to 2.0
     const clampedSpeed = Math.min(2.0, Math.max(0.5, speed));
 
@@ -68,6 +68,11 @@ async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: 
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         console.error('MiniMax TTS error:', err);
+        // Detect expired/deleted voice clone
+        const errMsg = (err.base_resp?.status_msg || '').toLowerCase();
+        if (errMsg.includes('voice') || errMsg.includes('slot') || errMsg.includes('not found') || errMsg.includes('invalid')) {
+            return 'voice_expired';
+        }
         return null;
     }
 
@@ -78,6 +83,10 @@ async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: 
 
     if (data.base_resp?.status_code !== 0 && data.base_resp?.status_code !== undefined) {
         console.error('MiniMax TTS error:', data.base_resp);
+        const errMsg = (data.base_resp?.status_msg || '').toLowerCase();
+        if (errMsg.includes('voice') || errMsg.includes('slot') || errMsg.includes('not found') || errMsg.includes('invalid')) {
+            return 'voice_expired';
+        }
         return null;
     }
 
@@ -96,6 +105,30 @@ async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: 
         (hexBuf[0] === 0x49 && hexBuf[1] === 0x44 && hexBuf[2] === 0x33)
     );
     return isValidMp3 ? hexBuf : Buffer.from(audioHex, 'base64');
+}
+
+// Delete a MiniMax voice clone to free up the voice slot
+async function deleteMiniMaxVoice(voiceId: string, apiKey: string, groupId: string): Promise<void> {
+    try {
+        const response = await fetch(
+            `https://api.minimax.io/v1/delete_voice?GroupId=${groupId}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    voice_id: voiceId,
+                    voice_type: 'voice_cloning',
+                }),
+            }
+        );
+        const data = await response.json().catch(() => ({}));
+        console.log('MiniMax delete voice result:', data);
+    } catch (err) {
+        console.error('MiniMax delete voice error (non-fatal):', err);
+    }
 }
 
 export async function POST(req: NextRequest) {
@@ -211,7 +244,16 @@ export async function POST(req: NextRequest) {
 
     try {
         if (provider === 'minimax') {
-            audioBuffer = await ttsMiniMax(reflection, voiceId, speed, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+            const result = await ttsMiniMax(reflection, voiceId, speed, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+            if (result === 'voice_expired') {
+                return NextResponse.json({
+                    error: 'voice_expired',
+                    message: 'Your voice clone has expired. Please re-clone your voice.',
+                    transcript,
+                    reflection,
+                }, { status: 410 });
+            }
+            audioBuffer = result;
         } else {
             audioBuffer = await ttsElevenLabs(reflection, voiceId, speed, ELEVENLABS_API_KEY);
         }
@@ -231,6 +273,11 @@ export async function POST(req: NextRequest) {
     }
 
     const audioBase64 = audioBuffer.toString('base64');
+
+    // Delete the MiniMax voice clone after successful TTS to free up the slot (fire-and-forget)
+    if (provider === 'minimax') {
+        deleteMiniMaxVoice(voiceId, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+    }
 
     return NextResponse.json({
         transcript,
