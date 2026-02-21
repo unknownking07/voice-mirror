@@ -236,6 +236,21 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
         }
     };
 
+    // Delete the cloned voice from the API to free up the slot
+    const deleteClone = async (vid?: string | null) => {
+        const idToDelete = vid || voiceId;
+        if (!idToDelete) return;
+        try {
+            await fetch('/api/delete-voice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ voiceId: idToDelete, provider }),
+            });
+        } catch (err) {
+            console.error('Failed to delete clone:', err);
+        }
+    };
+
     const formatDuration = (s: number) => {
         const mins = Math.floor(s / 60);
         const secs = s % 60;
@@ -398,7 +413,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                         )}
                         <button
                             className="btn btn-link"
-                            onClick={() => { setStep('recording'); setRecordedBlob(null); setVoiceId(null); }}
+                            onClick={() => { deleteClone(); setStep('recording'); setRecordedBlob(null); setVoiceId(null); }}
                         >
                             Try a different recording
                         </button>
