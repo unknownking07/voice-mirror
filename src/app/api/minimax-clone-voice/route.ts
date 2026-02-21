@@ -1,28 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
-import { writeFileSync, readFileSync, unlinkSync, mkdtempSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 
 export const maxDuration = 60;
-
-function convertWebmToWav(inputBuffer: Buffer): Buffer {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'mirror-'));
-    const inputPath = join(tmpDir, 'input.webm');
-    const outputPath = join(tmpDir, 'output.wav');
-
-    try {
-        writeFileSync(inputPath, inputBuffer);
-        execSync(`ffmpeg -i "${inputPath}" -ar 44100 -ac 1 "${outputPath}" -y`, {
-            stdio: 'pipe',
-            timeout: 30000,
-        });
-        return readFileSync(outputPath);
-    } finally {
-        try { unlinkSync(inputPath); } catch { /* ignore */ }
-        try { unlinkSync(outputPath); } catch { /* ignore */ }
-    }
-}
 
 export async function POST(req: NextRequest) {
     const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
@@ -41,21 +19,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Name and audio file are required' }, { status: 400 });
         }
 
-        // Convert WebM to WAV (MiniMax only accepts MP3, M4A, WAV)
+        // Client sends WAV (converted from WebM in the browser)
         const audioBuffer = Buffer.from(await audioFile.arrayBuffer());
-        let wavBuffer: Buffer;
-        try {
-            wavBuffer = convertWebmToWav(audioBuffer);
-        } catch (err) {
-            console.error('Audio conversion failed:', err);
-            return NextResponse.json({ error: 'Failed to convert audio format. Please try uploading an MP3 or WAV file.' }, { status: 400 });
-        }
+        const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/wav' });
 
-        const wavBlob = new Blob([new Uint8Array(wavBuffer)], { type: 'audio/wav' });
-
-        // Step 1: Upload the WAV file to MiniMax
+        // Step 1: Upload the file to MiniMax
         const uploadForm = new FormData();
-        uploadForm.append('file', wavBlob, 'voice-sample.wav');
+        uploadForm.append('file', audioBlob, 'voice-sample.wav');
         uploadForm.append('purpose', 'voice_clone');
 
         const uploadResponse = await fetch(

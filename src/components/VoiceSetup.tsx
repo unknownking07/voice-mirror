@@ -1,7 +1,47 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+
+function writeString(view: DataView, offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+    }
+}
+
+async function convertToWav(blob: Blob): Promise<Blob> {
+    const audioContext = new AudioContext({ sampleRate: 44100 });
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const channelData = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const numSamples = channelData.length;
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+
+    for (let i = 0; i < numSamples; i++) {
+        const s = Math.max(-1, Math.min(1, channelData[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+
+    await audioContext.close();
+    return new Blob([buffer], { type: 'audio/wav' });
+}
 
 interface Voice {
     voice_id: string;
@@ -83,9 +123,21 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
         setError(null);
 
         try {
+            // MiniMax needs WAV — convert from WebM in the browser
+            let audioToUpload: Blob = recordedBlob;
+            if (provider === 'minimax' && recordedBlob.type.includes('webm')) {
+                try {
+                    audioToUpload = await convertToWav(recordedBlob);
+                } catch {
+                    setError('Failed to process audio. Please try uploading a WAV or MP3 file instead.');
+                    setStep('recording');
+                    return;
+                }
+            }
+
             const formData = new FormData();
             formData.append('name', name.trim());
-            formData.append('audio', recordedBlob, 'voice-sample.webm');
+            formData.append('audio', audioToUpload, provider === 'minimax' ? 'voice-sample.wav' : 'voice-sample.webm');
 
             const cloneUrl = provider === 'minimax' ? '/api/minimax-clone-voice' : '/api/clone-voice';
             const response = await fetch(cloneUrl, {
