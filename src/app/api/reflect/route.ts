@@ -110,27 +110,32 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'API keys not configured' }, { status: 500 });
     }
 
+    const formData = await req.formData().catch(() => null);
+    if (!formData) {
+        return NextResponse.json({ error: 'Invalid request format' }, { status: 400 });
+    }
+
+    const audioFile = formData.get('audio') as File;
+    const voiceId = (formData.get('voiceId') as string) || VOICE_ID;
+    const speed = parseFloat((formData.get('speed') as string) || '1');
+    const provider = (formData.get('provider') as string) || 'elevenlabs';
+
+    if (!audioFile) {
+        return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
+    }
+
+    if (!voiceId) {
+        return NextResponse.json({ error: 'No voice ID configured. Please clone your voice first.' }, { status: 400 });
+    }
+
+    // Validate MiniMax credentials if that provider is selected
+    if (provider === 'minimax' && (!MINIMAX_API_KEY || !MINIMAX_GROUP_ID)) {
+        return NextResponse.json({ error: 'MiniMax API credentials not configured' }, { status: 500 });
+    }
+
+    // Step 1: Speech-to-Text via ElevenLabs (always)
+    let transcript: string;
     try {
-        const formData = await req.formData();
-        const audioFile = formData.get('audio') as File;
-        const voiceId = (formData.get('voiceId') as string) || VOICE_ID;
-        const speed = parseFloat((formData.get('speed') as string) || '1');
-        const provider = (formData.get('provider') as string) || 'elevenlabs';
-
-        if (!audioFile) {
-            return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
-        }
-
-        if (!voiceId) {
-            return NextResponse.json({ error: 'No voice ID configured. Please clone your voice first.' }, { status: 400 });
-        }
-
-        // Validate MiniMax credentials if that provider is selected
-        if (provider === 'minimax' && (!MINIMAX_API_KEY || !MINIMAX_GROUP_ID)) {
-            return NextResponse.json({ error: 'MiniMax API credentials not configured' }, { status: 500 });
-        }
-
-        // Step 1: Speech-to-Text via ElevenLabs (always)
         const sttForm = new FormData();
         sttForm.append('file', audioFile, 'recording.webm');
         sttForm.append('model_id', 'scribe_v1');
@@ -151,16 +156,22 @@ export async function POST(req: NextRequest) {
         }
 
         const sttData = await sttResponse.json();
-        const transcript = sttData.text?.trim();
+        transcript = sttData.text?.trim();
+    } catch (err) {
+        console.error('STT exception:', err);
+        return NextResponse.json({ error: `Transcription failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
+    }
 
-        if (!transcript) {
-            return NextResponse.json(
-                { error: 'no_speech', message: "I didn't hear anything. Try speaking a bit louder or closer to your mic." },
-                { status: 400 }
-            );
-        }
+    if (!transcript) {
+        return NextResponse.json(
+            { error: 'no_speech', message: "I didn't hear anything. Try speaking a bit louder or closer to your mic." },
+            { status: 400 }
+        );
+    }
 
-        // Step 2: LLM Reflection via Claude
+    // Step 2: LLM Reflection via Claude
+    let reflection: string;
+    try {
         const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
         const message = await anthropic.messages.create({
             model: 'claude-sonnet-4-20250514',
@@ -169,41 +180,46 @@ export async function POST(req: NextRequest) {
             messages: [{ role: 'user', content: transcript }],
         });
 
-        const reflection = (message.content[0] as { type: string; text: string }).text;
+        reflection = (message.content[0] as { type: string; text: string }).text;
+    } catch (err) {
+        console.error('Claude API error:', err);
+        return NextResponse.json({ error: `Reflection failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
+    }
 
-        if (!reflection) {
-            return NextResponse.json({ error: 'LLM returned empty response' }, { status: 500 });
-        }
+    if (!reflection) {
+        return NextResponse.json({ error: 'LLM returned empty response' }, { status: 500 });
+    }
 
-        // Step 3: Text-to-Speech (provider-specific)
-        let audioBuffer: Buffer | null = null;
+    // Step 3: Text-to-Speech (provider-specific)
+    let audioBuffer: Buffer | null = null;
 
+    try {
         if (provider === 'minimax') {
             audioBuffer = await ttsMiniMax(reflection, voiceId, speed, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
         } else {
             audioBuffer = await ttsElevenLabs(reflection, voiceId, speed, ELEVENLABS_API_KEY);
         }
+    } catch (err) {
+        console.error('TTS exception:', err);
+        // Fall through — audioBuffer stays null, text-only response below
+    }
 
-        if (!audioBuffer) {
-            // Fallback: return text-only response
-            return NextResponse.json({
-                transcript,
-                reflection,
-                audio: null,
-                error: 'Voice synthesis failed, returning text only',
-            });
-        }
-
-        const audioBase64 = audioBuffer.toString('base64');
-
+    if (!audioBuffer) {
+        // Fallback: return text-only response
         return NextResponse.json({
             transcript,
             reflection,
-            audio: audioBase64,
+            audio: null,
+            error: 'Voice synthesis failed, returning text only',
         });
-    } catch (error) {
-        console.error('Reflect pipeline error:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
+
+    const audioBase64 = audioBuffer.toString('base64');
+
+    return NextResponse.json({
+        transcript,
+        reflection,
+        audio: audioBase64,
+    });
 }
 
