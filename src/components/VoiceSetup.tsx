@@ -166,7 +166,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                 throw new Error(errorMsg);
             }
 
-            setVoiceId(data.voice_id);
+            setVoiceId(data.voice_id ?? null);
             setStep('previewing');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Something went wrong');
