@@ -13,7 +13,7 @@ interface Voice {
 }
 
 interface VoiceSetupProps {
-    onVoiceCloned: (voiceId: string) => void;
+    onVoiceCloned: (voiceId: string, provider: 'elevenlabs' | 'minimax') => void;
 }
 
 export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
@@ -22,6 +22,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
     const [error, setError] = useState<string | null>(null);
     const [voiceId, setVoiceId] = useState<string | null>(null);
     const [cloneError, setCloneError] = useState(false);
+    const [provider, setProvider] = useState<'elevenlabs' | 'minimax'>('elevenlabs');
     const { isRecording, duration, startRecording, stopRecording, error: recorderError } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -86,7 +87,8 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
             formData.append('name', name.trim());
             formData.append('audio', recordedBlob, 'voice-sample.webm');
 
-            const response = await fetch('/api/clone-voice', {
+            const cloneUrl = provider === 'minimax' ? '/api/minimax-clone-voice' : '/api/clone-voice';
+            const response = await fetch(cloneUrl, {
                 method: 'POST',
                 body: formData,
             });
@@ -118,7 +120,10 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
         setError(null);
 
         try {
-            const response = await fetch(`/api/preview-voice?voiceId=${voiceId}`, {
+            const previewUrl = provider === 'minimax'
+                ? `/api/minimax-preview-voice?voiceId=${voiceId}`
+                : `/api/preview-voice?voiceId=${voiceId}`;
+            const response = await fetch(previewUrl, {
                 method: 'POST',
             });
 
@@ -130,7 +135,11 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
             const url = URL.createObjectURL(audioBlob);
             if (audioRef.current) {
                 audioRef.current.src = url;
-                audioRef.current.play();
+                try {
+                    await audioRef.current.play();
+                } catch {
+                    setError('Audio playback failed. Please check your browser volume and try again.');
+                }
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Preview failed');
@@ -153,14 +162,14 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
 
     const handleConfirmPreset = () => {
         if (selectedVoice) {
-            onVoiceCloned(selectedVoice.voice_id);
+            onVoiceCloned(selectedVoice.voice_id, 'elevenlabs');
         }
     };
 
     const handleConfirm = () => {
         if (voiceId) {
             setStep('done');
-            onVoiceCloned(voiceId);
+            onVoiceCloned(voiceId, provider);
         }
     };
 
@@ -181,7 +190,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                     <div className="setup-step">
                         <p className="setup-description">
                             To hear your own voice reflecting back, I need a sample of how you speak.
-                            Record at least 30 seconds of natural speech — read something aloud,
+                            Record at least {provider === 'minimax' ? '60' : '30'} seconds of natural speech — read something aloud,
                             talk about your day, anything that sounds like <em>you</em>.
                         </p>
                         <input
@@ -191,6 +200,25 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                         />
+                        <div className="provider-select">
+                            <label className="settings-label">Voice Engine</label>
+                            <div className="provider-options">
+                                <button
+                                    className={`provider-option ${provider === 'elevenlabs' ? 'active' : ''}`}
+                                    onClick={() => setProvider('elevenlabs')}
+                                >
+                                    <span className="provider-name">ElevenLabs</span>
+                                    <span className="provider-desc">Reliable, multilingual</span>
+                                </button>
+                                <button
+                                    className={`provider-option ${provider === 'minimax' ? 'active' : ''}`}
+                                    onClick={() => setProvider('minimax')}
+                                >
+                                    <span className="provider-name">MiniMax</span>
+                                    <span className="provider-desc">More identical voice</span>
+                                </button>
+                            </div>
+                        </div>
                         <button
                             className="btn btn-primary"
                             onClick={() => setStep('recording')}
@@ -209,7 +237,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                 {step === 'recording' && (
                     <div className="setup-step">
                         <p className="setup-description">
-                            Speak naturally for at least 30 seconds. A quiet room works best.
+                            Speak naturally for at least {provider === 'minimax' ? '60' : '30'} seconds. A quiet room works best.
                         </p>
 
                         <div className="recording-controls">
@@ -240,7 +268,9 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                                         <span className="recording-time">{formatDuration(duration)}</span>
                                     </div>
                                     <p className="recording-hint">
-                                        {duration < 30 ? `Keep going... ${30 - duration}s more recommended` : 'Good length! Stop when ready.'}
+                                        {duration < (provider === 'minimax' ? 60 : 30)
+                                            ? `Keep going... ${(provider === 'minimax' ? 60 : 30) - duration}s more recommended`
+                                            : 'Good length! Stop when ready.'}
                                     </p>
                                     <button className="btn btn-stop" onClick={handleStopRecording}>
                                         Stop Recording

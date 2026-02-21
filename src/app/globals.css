@@ -39,7 +39,8 @@ body {
   font-family: var(--font-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   cursor: default;
 }
 
@@ -104,7 +105,8 @@ body {
    ========================================= */
 .app {
   width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   z-index: 10;
   display: flex;
@@ -157,6 +159,8 @@ body {
   cursor: pointer;
   transition: all var(--transition);
   padding: 12px 28px;
+  min-height: 48px; /* accessible touch target */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn:disabled {
@@ -224,11 +228,12 @@ body {
    ========================================= */
 .voice-setup {
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: max(32px, env(safe-area-inset-top, 32px)) 24px max(40px, env(safe-area-inset-bottom, 40px));
   overflow-y: auto;
   position: relative;
   z-index: 10;
@@ -283,7 +288,7 @@ body {
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 16px; /* 16px prevents iOS auto-zoom on focus */
   outline: none;
   transition: border-color var(--transition);
   margin-bottom: 20px;
@@ -430,6 +435,64 @@ body {
   font-size: 13px;
   text-align: center;
   font-family: var(--font-sans);
+}
+
+/* --- Provider Selector --- */
+.provider-select {
+  margin: 20px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.provider-select .settings-label {
+  margin-bottom: 10px;
+  display: block;
+}
+
+.provider-options {
+  display: flex;
+  gap: 10px;
+}
+
+.provider-option {
+  flex: 1;
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.provider-option:hover {
+  border-color: rgba(93, 78, 112, 0.3);
+}
+
+.provider-option.active {
+  background: rgba(93, 78, 112, 0.15);
+  border-color: rgba(93, 78, 112, 0.5);
+  box-shadow: 0 0 15px rgba(93, 78, 112, 0.15);
+}
+
+.provider-name {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.provider-option.active .provider-name {
+  color: var(--accent-violet-light);
+}
+
+.provider-desc {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* --- Skip & Fallback --- */
@@ -597,14 +660,15 @@ body {
 .mirror-session {
   width: 100%;
   max-width: 480px;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
   position: relative;
   z-index: 10;
-  padding: 40px 24px;
+  padding: max(40px, env(safe-area-inset-top, 40px)) 24px max(32px, env(safe-area-inset-bottom, 32px));
 }
 
 /* --- Top Bar (Design 2) --- */
@@ -1149,7 +1213,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 20px 24px;
-  width: 300px;
+  width: min(300px, calc(100vw - 48px));
   backdrop-filter: blur(20px);
   animation: slideUp 0.3s ease-out;
   z-index: 60;
@@ -1311,7 +1375,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 20px 24px;
-  width: 340px;
+  width: min(340px, calc(100vw - 48px));
   max-height: 300px;
   overflow-y: auto;
   backdrop-filter: blur(20px);
@@ -1425,8 +1489,21 @@ body {
     font-size: 2.2rem;
   }
 
+  .setup-container {
+    padding: 16px 0;
+  }
+
   .prompt-text {
     font-size: 1.6rem;
+  }
+
+  .prompt-card {
+    padding: 1.25rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+
+  .prompt-card-text {
+    font-size: 1.1rem;
   }
 
   .record-btn-core {
@@ -1439,15 +1516,67 @@ body {
     height: 100px;
   }
 
+  /* Stack preview buttons vertically on small screens */
+  .preview-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  /* Stack recording actions vertically on very small screens */
+  .recording-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 280px;
+  }
+
   .reflection-card {
-    padding: 1.5rem;
+    padding: 1.25rem;
   }
 
   .reflection-text {
     font-size: 1.1rem;
   }
 
+  .mirror-speaking .reflection-text {
+    max-width: 100%;
+    font-size: 1.1rem;
+  }
+
   .peripheral-text {
     display: none;
+  }
+
+  /* Larger touch targets in session */
+  .btn-ghost {
+    padding: 12px 20px;
+    min-height: 44px;
+  }
+
+  .control-btn {
+    width: 52px;
+    height: 52px;
+  }
+
+  /* Error toast — full-width on mobile */
+  .error-toast {
+    left: 16px;
+    right: 16px;
+    bottom: max(16px, env(safe-area-inset-bottom, 16px));
+    transform: none;
+    width: auto;
+  }
+
+  /* Voice grid taller on mobile so more entries show */
+  .voice-grid {
+    max-height: 240px;
+  }
+
+  /* Waveform rings — scale down to not overflow */
+  .waveform-rings {
+    width: 220px;
+    height: 220px;
   }
 }

@@ -13,6 +13,7 @@ interface Reflection {
 
 interface MirrorSessionProps {
     voiceId: string;
+    provider: 'elevenlabs' | 'minimax';
 }
 
 const PROMPTS = [
@@ -24,7 +25,7 @@ const PROMPTS = [
     "What do you actually want?",
 ];
 
-export default function MirrorSession({ voiceId }: MirrorSessionProps) {
+export default function MirrorSession({ voiceId, provider }: MirrorSessionProps) {
     const [phase, setPhase] = useState<'idle' | 'recording' | 'thinking' | 'speaking' | 'done'>('idle');
     const [reflections, setReflections] = useState<Reflection[]>([]);
     const [currentReflection, setCurrentReflection] = useState<Reflection | null>(null);
@@ -116,6 +117,7 @@ export default function MirrorSession({ voiceId }: MirrorSessionProps) {
             formData.append('audio', blob, 'recording.webm');
             formData.append('voiceId', voiceId);
             formData.append('speed', voiceSpeed.toString());
+            formData.append('provider', provider);
 
             const response = await fetch('/api/reflect', { method: 'POST', body: formData });
             const data = await response.json();
@@ -153,7 +155,7 @@ export default function MirrorSession({ voiceId }: MirrorSessionProps) {
             setError(err instanceof Error ? err.message : 'Something went wrong');
             setPhase('idle');
         }
-    }, [stopRecording, voiceId, voiceSpeed]);
+    }, [stopRecording, voiceId, voiceSpeed, provider]);
 
     const handleReplay = () => {
         if (currentReflection?.audioUrl && audioRef.current) {

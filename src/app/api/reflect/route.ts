@@ -4,10 +4,107 @@ import { MIRROR_SYSTEM_PROMPT } from '@/lib/prompts';
 
 export const maxDuration = 60;
 
+async function ttsElevenLabs(text: string, voiceId: string, speed: number, apiKey: string): Promise<Buffer | null> {
+    const clampedSpeed = Math.min(4.0, Math.max(0.25, speed));
+
+    const response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+        {
+            method: 'POST',
+            headers: {
+                'xi-api-key': apiKey,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text,
+                model_id: 'eleven_multilingual_v2',
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75,
+                    speed: clampedSpeed,
+                },
+            }),
+        }
+    );
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        console.error('ElevenLabs TTS error:', err);
+        return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}
+
+async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: string, groupId: string): Promise<Buffer | null> {
+    // MiniMax speed range: 0.5 to 2.0
+    const clampedSpeed = Math.min(2.0, Math.max(0.5, speed));
+
+    const response = await fetch(
+        `https://api.minimax.io/v1/t2a_v2?GroupId=${groupId}`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'speech-02-turbo',
+                text,
+                voice_setting: {
+                    voice_id: voiceId,
+                    speed: clampedSpeed,
+                    vol: 1.0,
+                    pitch: 0,
+                },
+                audio_setting: {
+                    format: 'mp3',
+                    sample_rate: 32000,
+                },
+            }),
+        }
+    );
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        console.error('MiniMax TTS error:', err);
+        return null;
+    }
+
+    const data = await response.json();
+    console.log('MiniMax TTS response keys:', Object.keys(data));
+    console.log('MiniMax TTS base_resp:', data.base_resp);
+    console.log('MiniMax TTS audio_file length:', data.audio_file?.length || 0);
+
+    if (data.base_resp?.status_code !== 0 && data.base_resp?.status_code !== undefined) {
+        console.error('MiniMax TTS error:', data.base_resp);
+        return null;
+    }
+
+    const audioHex = data.audio_file || data.data?.audio_file || data.data?.audio;
+
+    if (!audioHex) {
+        console.error('MiniMax TTS returned no audio. Full response:', JSON.stringify(data).substring(0, 500));
+        return null;
+    }
+
+    // Decode audio: MiniMax returns hex; validate with MP3 magic bytes and fall back to base64
+    const hexBuf = Buffer.from(audioHex, 'hex');
+    // Valid MP3: sync word (0xFF 0xEX) or ID3 header (0x49 0x44 0x33)
+    const isValidMp3 = hexBuf.length > 10 && (
+        (hexBuf[0] === 0xFF && (hexBuf[1] & 0xE0) === 0xE0) ||
+        (hexBuf[0] === 0x49 && hexBuf[1] === 0x44 && hexBuf[2] === 0x33)
+    );
+    return isValidMp3 ? hexBuf : Buffer.from(audioHex, 'base64');
+}
+
 export async function POST(req: NextRequest) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     const VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
+    const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
+    const MINIMAX_GROUP_ID = process.env.MINIMAX_GROUP_ID;
 
     if (!ELEVENLABS_API_KEY || !ANTHROPIC_API_KEY) {
         return NextResponse.json({ error: 'API keys not configured' }, { status: 500 });
@@ -18,6 +115,7 @@ export async function POST(req: NextRequest) {
         const audioFile = formData.get('audio') as File;
         const voiceId = (formData.get('voiceId') as string) || VOICE_ID;
         const speed = parseFloat((formData.get('speed') as string) || '1');
+        const provider = (formData.get('provider') as string) || 'elevenlabs';
 
         if (!audioFile) {
             return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
@@ -27,7 +125,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No voice ID configured. Please clone your voice first.' }, { status: 400 });
         }
 
-        // Step 1: Speech-to-Text via ElevenLabs
+        // Validate MiniMax credentials if that provider is selected
+        if (provider === 'minimax' && (!MINIMAX_API_KEY || !MINIMAX_GROUP_ID)) {
+            return NextResponse.json({ error: 'MiniMax API credentials not configured' }, { status: 500 });
+        }
+
+        // Step 1: Speech-to-Text via ElevenLabs (always)
         const sttForm = new FormData();
         sttForm.append('file', audioFile, 'recording.webm');
         sttForm.append('model_id', 'scribe_v1');
@@ -72,33 +175,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'LLM returned empty response' }, { status: 500 });
         }
 
-        // Clamp speed to ElevenLabs' supported range (0.25 to 4.0)
-        const clampedSpeed = Math.min(4.0, Math.max(0.25, speed));
+        // Step 3: Text-to-Speech (provider-specific)
+        let audioBuffer: Buffer | null = null;
 
-        // Step 3: Text-to-Speech via ElevenLabs (cloned voice)
-        const ttsResponse = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-            {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': ELEVENLABS_API_KEY,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text: reflection,
-                    model_id: 'eleven_multilingual_v2',
-                    voice_settings: {
-                        stability: 0.5,
-                        similarity_boost: 0.75,
-                        speed: clampedSpeed,
-                    },
-                }),
-            }
-        );
+        if (provider === 'minimax') {
+            audioBuffer = await ttsMiniMax(reflection, voiceId, speed, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+        } else {
+            audioBuffer = await ttsElevenLabs(reflection, voiceId, speed, ELEVENLABS_API_KEY);
+        }
 
-        if (!ttsResponse.ok) {
-            const ttsError = await ttsResponse.json().catch(() => ({}));
-            console.error('TTS error:', ttsError);
+        if (!audioBuffer) {
             // Fallback: return text-only response
             return NextResponse.json({
                 transcript,
@@ -108,9 +194,7 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Collect audio stream into a buffer to send alongside metadata
-        const audioArrayBuffer = await ttsResponse.arrayBuffer();
-        const audioBase64 = Buffer.from(audioArrayBuffer).toString('base64');
+        const audioBase64 = audioBuffer.toString('base64');
 
         return NextResponse.json({
             transcript,
@@ -122,3 +206,4 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
+
