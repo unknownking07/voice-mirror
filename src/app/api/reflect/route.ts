@@ -131,6 +131,23 @@ async function deleteMiniMaxVoice(voiceId: string, apiKey: string, groupId: stri
     }
 }
 
+// Delete an ElevenLabs voice clone to free up the voice slot
+async function deleteElevenLabsVoice(voiceId: string, apiKey: string): Promise<void> {
+    try {
+        const response = await fetch(
+            `https://api.elevenlabs.io/v1/voices/${voiceId}`,
+            {
+                method: 'DELETE',
+                headers: { 'xi-api-key': apiKey },
+            }
+        );
+        const data = await response.json().catch(() => ({}));
+        console.log('ElevenLabs delete voice result:', data);
+    } catch (err) {
+        console.error('ElevenLabs delete voice error (non-fatal):', err);
+    }
+}
+
 export async function POST(req: NextRequest) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -274,10 +291,12 @@ export async function POST(req: NextRequest) {
 
     const audioBase64 = audioBuffer.toString('base64');
 
-    // Delete the MiniMax voice clone after successful TTS to free up the slot
+    // Delete the voice clone after successful TTS to free up the slot
     // Must be awaited — Vercel serverless terminates execution after response is sent
     if (provider === 'minimax') {
         await deleteMiniMaxVoice(voiceId, MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
+    } else {
+        await deleteElevenLabsVoice(voiceId, ELEVENLABS_API_KEY);
     }
 
     return NextResponse.json({
