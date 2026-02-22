@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MIRROR_SYSTEM_PROMPT } from '@/lib/prompts';
-import { cleanupElevenLabsClones, cleanupMiniMaxClones } from '@/lib/cleanup-clones';
+import {
+    deleteOneElevenLabsClone, cleanupElevenLabsClones,
+    deleteOneMiniMaxClone, cleanupMiniMaxClones,
+} from '@/lib/cleanup-clones';
 
 export const maxDuration = 60;
 
@@ -251,11 +254,15 @@ export async function POST(req: NextRequest) {
 
     const audioBase64 = audioBuffer.toString('base64');
 
-    // Delete ALL voice clones after successful TTS to free up every slot
+    // Delete voice clones after successful TTS to free up every slot
+    // 1. Direct-delete the specific voice used (always works, even for inactive clones)
+    // 2. Sweep all remaining clones via list API (catches orphans from abandoned sessions)
     // Must be awaited — Vercel serverless terminates execution after response is sent
     if (provider === 'minimax') {
+        await deleteOneMiniMaxClone(MINIMAX_API_KEY!, MINIMAX_GROUP_ID!, voiceId);
         await cleanupMiniMaxClones(MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
     } else {
+        await deleteOneElevenLabsClone(ELEVENLABS_API_KEY, voiceId);
         await cleanupElevenLabsClones(ELEVENLABS_API_KEY);
     }
 

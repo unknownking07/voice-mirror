@@ -1,7 +1,28 @@
 /**
  * Utility to list and delete ALL voice clones for both ElevenLabs and MiniMax.
  * Called after clone creation (to purge orphans) and after TTS (to free all slots).
+ *
+ * Two strategies are used together for reliability:
+ *  1. Direct delete — always delete a specific voiceId (guaranteed to work)
+ *  2. List + sweep — list all clones via API and delete each one (catches orphans)
  */
+
+// ─── ElevenLabs ──────────────────────────────────────────────────────
+
+export async function deleteOneElevenLabsClone(apiKey: string, voiceId: string): Promise<boolean> {
+    try {
+        const res = await fetch(`https://api.elevenlabs.io/v1/voices/${voiceId}`, {
+            method: 'DELETE',
+            headers: { 'xi-api-key': apiKey },
+        });
+        const ok = res.ok;
+        console.log(`ElevenLabs direct-delete ${voiceId}: ${ok ? 'success' : res.status}`);
+        return ok;
+    } catch (err) {
+        console.error(`ElevenLabs direct-delete ${voiceId} error:`, err);
+        return false;
+    }
+}
 
 export async function cleanupElevenLabsClones(
     apiKey: string,
@@ -9,7 +30,6 @@ export async function cleanupElevenLabsClones(
 ): Promise<number> {
     let deleted = 0;
     try {
-        // List all voices
         const res = await fetch('https://api.elevenlabs.io/v1/voices', {
             headers: { 'xi-api-key': apiKey },
         });
@@ -24,25 +44,9 @@ export async function cleanupElevenLabsClones(
                 v.category === 'cloned' && v.voice_id !== excludeVoiceId
         );
 
-        // Delete each cloned voice
         for (const voice of clonedVoices) {
-            try {
-                const delRes = await fetch(
-                    `https://api.elevenlabs.io/v1/voices/${voice.voice_id}`,
-                    {
-                        method: 'DELETE',
-                        headers: { 'xi-api-key': apiKey },
-                    }
-                );
-                if (delRes.ok) {
-                    deleted++;
-                    console.log(`Cleaned up ElevenLabs clone: ${voice.voice_id} (${voice.name})`);
-                } else {
-                    console.error(`Failed to delete ElevenLabs clone ${voice.voice_id}:`, delRes.status);
-                }
-            } catch (err) {
-                console.error(`Error deleting ElevenLabs clone ${voice.voice_id}:`, err);
-            }
+            const ok = await deleteOneElevenLabsClone(apiKey, voice.voice_id);
+            if (ok) deleted++;
         }
 
         if (deleted > 0) {
@@ -54,6 +58,39 @@ export async function cleanupElevenLabsClones(
     return deleted;
 }
 
+// ─── MiniMax ─────────────────────────────────────────────────────────
+
+export async function deleteOneMiniMaxClone(
+    apiKey: string,
+    groupId: string,
+    voiceId: string
+): Promise<boolean> {
+    try {
+        const res = await fetch(
+            `https://api.minimax.io/v1/delete_voice?GroupId=${groupId}`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    voice_id: voiceId,
+                    voice_type: 'voice_cloning',
+                }),
+            }
+        );
+        const body = await res.json().catch(() => ({}));
+        // MiniMax returns HTTP 200 even on failure — check body status_code
+        const ok = res.ok && (body.base_resp?.status_code === 0 || !body.base_resp?.status_code);
+        console.log(`MiniMax direct-delete ${voiceId}: ${ok ? 'success' : JSON.stringify(body.base_resp)}`);
+        return ok;
+    } catch (err) {
+        console.error(`MiniMax direct-delete ${voiceId} error:`, err);
+        return false;
+    }
+}
+
 export async function cleanupMiniMaxClones(
     apiKey: string,
     groupId: string,
@@ -61,7 +98,6 @@ export async function cleanupMiniMaxClones(
 ): Promise<number> {
     let deleted = 0;
     try {
-        // List all cloned voices
         const res = await fetch(
             `https://api.minimax.io/v1/get_voice?GroupId=${groupId}`,
             {
@@ -80,35 +116,18 @@ export async function cleanupMiniMaxClones(
         }
 
         const data = await res.json();
-        const clonedVoices: { voice_id: string }[] = data.voice_cloning || [];
+        console.log('MiniMax get_voice response keys:', Object.keys(data));
 
-        // Delete each cloned voice except the excluded one
+        // The API may nest clones under different keys — check all possibilities
+        const clonedVoices: { voice_id: string }[] =
+            data.voice_cloning || data.voices || data.data?.voice_cloning || [];
+
+        console.log(`MiniMax found ${clonedVoices.length} clone(s) to clean up`);
+
         for (const voice of clonedVoices) {
             if (voice.voice_id === excludeVoiceId) continue;
-            try {
-                const delRes = await fetch(
-                    `https://api.minimax.io/v1/delete_voice?GroupId=${groupId}`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${apiKey}`,
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            voice_id: voice.voice_id,
-                            voice_type: 'voice_cloning',
-                        }),
-                    }
-                );
-                if (delRes.ok) {
-                    deleted++;
-                    console.log(`Cleaned up MiniMax clone: ${voice.voice_id}`);
-                } else {
-                    console.error(`Failed to delete MiniMax clone ${voice.voice_id}:`, delRes.status);
-                }
-            } catch (err) {
-                console.error(`Error deleting MiniMax clone ${voice.voice_id}:`, err);
-            }
+            const ok = await deleteOneMiniMaxClone(apiKey, groupId, voice.voice_id);
+            if (ok) deleted++;
         }
 
         if (deleted > 0) {

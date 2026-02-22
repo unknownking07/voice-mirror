@@ -64,6 +64,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
     const [voiceId, setVoiceId] = useState<string | null>(null);
     const [cloneError, setCloneError] = useState(false);
     const [loadingPreview, setLoadingPreview] = useState(false);
+    const [previewCount, setPreviewCount] = useState(0);
     const [provider, setProvider] = useState<'elevenlabs' | 'minimax'>('elevenlabs');
     const { isRecording, duration, startRecording, stopRecording, error: recorderError } = useAudioRecorder();
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -202,6 +203,7 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                     setError('Audio playback failed. Please check your browser volume and try again.');
                 }
             }
+            setPreviewCount((c) => c + 1);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Preview failed');
         } finally {
@@ -431,6 +433,9 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                         </div>
                         {loadingPreview && (
                             <p className="preview-hint">This may take a few seconds</p>
+                        )}
+                        {!loadingPreview && previewCount >= 1 && (
+                            <p className="preview-hint">Tap preview again — each play sounds slightly different</p>
                         )}
                         <button
                             className="btn btn-link"
