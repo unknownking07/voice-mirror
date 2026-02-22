@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cleanupMiniMaxClones } from '@/lib/cleanup-clones';
 
 export const maxDuration = 60;
 
@@ -11,6 +12,9 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+        // Clean up ALL existing clones before creating a new one
+        await cleanupMiniMaxClones(MINIMAX_API_KEY, MINIMAX_GROUP_ID);
+
         const formData = await req.formData();
         const name = formData.get('name') as string;
         const audioFile = formData.get('audio') as File;

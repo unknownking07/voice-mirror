@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cleanupElevenLabsClones } from '@/lib/cleanup-clones';
 
 export async function POST(req: NextRequest) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -7,6 +8,9 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+        // Clean up ALL existing clones before creating a new one
+        await cleanupElevenLabsClones(ELEVENLABS_API_KEY);
+
         const formData = await req.formData();
         const name = formData.get('name') as string;
         const audioFile = formData.get('audio') as File;
