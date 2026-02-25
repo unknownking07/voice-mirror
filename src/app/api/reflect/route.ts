@@ -181,12 +181,14 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Step 2: LLM Reflection via Claude (with retry for transient 529 overloaded errors)
+    // Step 2: LLM Reflection via Claude
+    // Try Sonnet first, fall back to Haiku if overloaded
+    const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
     let reflection: string;
-    const MAX_RETRIES = 2;
     try {
         let claudeResponse: Response | null = null;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+
+        for (const model of MODELS) {
             claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -195,17 +197,16 @@ export async function POST(req: NextRequest) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
+                    model,
                     max_tokens: 512,
                     system: MIRROR_SYSTEM_PROMPT,
                     messages: [{ role: 'user', content: transcript }],
                 }),
             });
 
-            // Retry on 529 (overloaded) or 503 (service unavailable)
-            if ((claudeResponse.status === 529 || claudeResponse.status === 503) && attempt < MAX_RETRIES) {
-                console.log(`Claude API returned ${claudeResponse.status}, retrying (${attempt + 1}/${MAX_RETRIES})...`);
-                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            if (claudeResponse.status === 529 || claudeResponse.status === 503) {
+                console.log(`Claude ${model} returned ${claudeResponse.status}, trying next model...`);
+                await new Promise((r) => setTimeout(r, 500));
                 continue;
             }
             break;
