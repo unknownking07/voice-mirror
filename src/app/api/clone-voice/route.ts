@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanupElevenLabsClones } from '@/lib/cleanup-clones';
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
     if (!ELEVENLABS_API_KEY) {
@@ -8,8 +10,10 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        // Clean up ALL existing clones before creating a new one
-        await cleanupElevenLabsClones(ELEVENLABS_API_KEY);
+        // Best-effort cleanup — don't let it block or fail the clone
+        await cleanupElevenLabsClones(ELEVENLABS_API_KEY).catch((err) =>
+            console.error('Pre-clone cleanup failed (non-fatal):', err)
+        );
 
         const formData = await req.formData();
         const name = formData.get('name') as string;

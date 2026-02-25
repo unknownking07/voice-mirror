@@ -181,34 +181,46 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Step 2: LLM Reflection via Claude (direct REST API — more reliable on serverless)
+    // Step 2: LLM Reflection via Claude (with retry for transient 529 overloaded errors)
     let reflection: string;
+    const MAX_RETRIES = 2;
     try {
-        const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'x-api-key': ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 512,
-                system: MIRROR_SYSTEM_PROMPT,
-                messages: [{ role: 'user', content: transcript }],
-            }),
-        });
+        let claudeResponse: Response | null = null;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'x-api-key': ANTHROPIC_API_KEY,
+                    'anthropic-version': '2023-06-01',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'claude-sonnet-4-20250514',
+                    max_tokens: 512,
+                    system: MIRROR_SYSTEM_PROMPT,
+                    messages: [{ role: 'user', content: transcript }],
+                }),
+            });
 
-        if (!claudeResponse.ok) {
-            const claudeError = await claudeResponse.json().catch(() => ({}));
-            console.error('Claude API error:', claudeResponse.status, claudeError);
+            // Retry on 529 (overloaded) or 503 (service unavailable)
+            if ((claudeResponse.status === 529 || claudeResponse.status === 503) && attempt < MAX_RETRIES) {
+                console.log(`Claude API returned ${claudeResponse.status}, retrying (${attempt + 1}/${MAX_RETRIES})...`);
+                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+                continue;
+            }
+            break;
+        }
+
+        if (!claudeResponse!.ok) {
+            const claudeError = await claudeResponse!.json().catch(() => ({}));
+            console.error('Claude API error:', claudeResponse!.status, claudeError);
             return NextResponse.json(
-                { error: `Reflection failed: ${claudeError.error?.message || claudeResponse.statusText}` },
+                { error: `Reflection failed: ${claudeError.error?.message || claudeResponse!.statusText}` },
                 { status: 500 }
             );
         }
 
-        const claudeData = await claudeResponse.json();
+        const claudeData = await claudeResponse!.json();
         reflection = claudeData.content?.[0]?.text;
     } catch (err) {
         console.error('Claude API exception:', err);
