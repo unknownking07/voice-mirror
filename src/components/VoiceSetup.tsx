@@ -370,10 +370,14 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
                                     </div>
                                     <p className="recording-hint">
                                         {duration < (provider === 'minimax' ? 60 : 30)
-                                            ? `Keep going... ${(provider === 'minimax' ? 60 : 30) - duration}s more recommended`
+                                            ? `Keep going... ${(provider === 'minimax' ? 60 : 30) - duration}s more`
                                             : 'Good length! Stop when ready.'}
                                     </p>
-                                    <button className="btn btn-stop" onClick={handleStopRecording}>
+                                    <button
+                                        className="btn btn-stop"
+                                        onClick={handleStopRecording}
+                                        disabled={duration < (provider === 'minimax' ? 60 : 30)}
+                                    >
                                         Stop Recording
                                     </button>
                                 </div>
