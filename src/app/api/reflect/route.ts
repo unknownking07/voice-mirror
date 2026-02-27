@@ -1,115 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MIRROR_SYSTEM_PROMPT } from '@/lib/prompts';
-import {
-    deleteOneElevenLabsClone, cleanupElevenLabsClones,
-    deleteOneMiniMaxClone, cleanupMiniMaxClones,
-} from '@/lib/cleanup-clones';
+import { ttsElevenLabs, ttsMiniMax } from '@/lib/tts';
 
 export const maxDuration = 60;
-
-async function ttsElevenLabs(text: string, voiceId: string, speed: number, apiKey: string): Promise<Buffer | null> {
-    const clampedSpeed = Math.min(4.0, Math.max(0.25, speed));
-
-    const response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
-        {
-            method: 'POST',
-            headers: {
-                'xi-api-key': apiKey,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                text,
-                model_id: 'eleven_multilingual_v2',
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.75,
-                    speed: clampedSpeed,
-                },
-            }),
-        }
-    );
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        console.error('ElevenLabs TTS error:', err);
-        return null;
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-}
-
-async function ttsMiniMax(text: string, voiceId: string, speed: number, apiKey: string, groupId: string): Promise<Buffer | null | 'voice_expired'> {
-    // MiniMax speed range: 0.5 to 2.0
-    const clampedSpeed = Math.min(2.0, Math.max(0.5, speed));
-
-    const response = await fetch(
-        `https://api.minimax.io/v1/t2a_v2?GroupId=${groupId}`,
-        {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'speech-02-turbo',
-                text,
-                voice_setting: {
-                    voice_id: voiceId,
-                    speed: clampedSpeed,
-                    vol: 1.0,
-                    pitch: 0,
-                },
-                audio_setting: {
-                    format: 'mp3',
-                    sample_rate: 32000,
-                },
-            }),
-        }
-    );
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        console.error('MiniMax TTS error:', err);
-        // Detect expired/deleted voice clone
-        const errMsg = (err.base_resp?.status_msg || '').toLowerCase();
-        if (errMsg.includes('voice') || errMsg.includes('slot') || errMsg.includes('not found') || errMsg.includes('invalid')) {
-            return 'voice_expired';
-        }
-        return null;
-    }
-
-    const data = await response.json();
-    console.log('MiniMax TTS response keys:', Object.keys(data));
-    console.log('MiniMax TTS base_resp:', data.base_resp);
-    console.log('MiniMax TTS audio_file length:', data.audio_file?.length || 0);
-
-    if (data.base_resp?.status_code !== 0 && data.base_resp?.status_code !== undefined) {
-        console.error('MiniMax TTS error:', data.base_resp);
-        const errMsg = (data.base_resp?.status_msg || '').toLowerCase();
-        if (errMsg.includes('voice') || errMsg.includes('slot') || errMsg.includes('not found') || errMsg.includes('invalid')) {
-            return 'voice_expired';
-        }
-        return null;
-    }
-
-    const audioHex = data.audio_file || data.data?.audio_file || data.data?.audio;
-
-    if (!audioHex) {
-        console.error('MiniMax TTS returned no audio. Full response:', JSON.stringify(data).substring(0, 500));
-        return null;
-    }
-
-    // Decode audio: MiniMax returns hex; validate with MP3 magic bytes and fall back to base64
-    const hexBuf = Buffer.from(audioHex, 'hex');
-    // Valid MP3: sync word (0xFF 0xEX) or ID3 header (0x49 0x44 0x33)
-    const isValidMp3 = hexBuf.length > 10 && (
-        (hexBuf[0] === 0xFF && (hexBuf[1] & 0xE0) === 0xE0) ||
-        (hexBuf[0] === 0x49 && hexBuf[1] === 0x44 && hexBuf[2] === 0x33)
-    );
-    return isValidMp3 ? hexBuf : Buffer.from(audioHex, 'base64');
-}
 
 export async function POST(req: NextRequest) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -127,13 +20,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid request format' }, { status: 400 });
     }
 
-    const audioFile = formData.get('audio') as File;
+    const audioFile = formData.get('audio') as File | null;
     const voiceId = (formData.get('voiceId') as string) || VOICE_ID;
     const speed = parseFloat((formData.get('speed') as string) || '1');
     const provider = (formData.get('provider') as string) || 'elevenlabs';
+    const customSystemPrompt = formData.get('systemPrompt') as string | null;
+    const providedTranscript = formData.get('transcript') as string | null;
 
-    if (!audioFile) {
-        return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
+    if (!audioFile && !providedTranscript) {
+        return NextResponse.json({ error: 'Audio file or transcript is required' }, { status: 400 });
     }
 
     if (!voiceId) {
@@ -145,45 +40,50 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'MiniMax API credentials not configured' }, { status: 500 });
     }
 
-    // Step 1: Speech-to-Text via ElevenLabs (always)
+    // Step 1: Speech-to-Text (skip if transcript provided)
     let transcript: string;
-    try {
-        const sttForm = new FormData();
-        sttForm.append('file', audioFile, 'recording.webm');
-        sttForm.append('model_id', 'scribe_v1');
+    if (providedTranscript) {
+        transcript = providedTranscript;
+    } else {
+        try {
+            const sttForm = new FormData();
+            sttForm.append('file', audioFile!, 'recording.webm');
+            sttForm.append('model_id', 'scribe_v1');
 
-        const sttResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-            method: 'POST',
-            headers: { 'xi-api-key': ELEVENLABS_API_KEY },
-            body: sttForm,
-        });
+            const sttResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+                method: 'POST',
+                headers: { 'xi-api-key': ELEVENLABS_API_KEY },
+                body: sttForm,
+            });
 
-        if (!sttResponse.ok) {
-            const sttError = await sttResponse.json().catch(() => ({}));
-            console.error('STT error:', sttError);
-            return NextResponse.json(
-                { error: 'Speech transcription failed', details: sttError },
-                { status: 500 }
-            );
+            if (!sttResponse.ok) {
+                const sttError = await sttResponse.json().catch(() => ({}));
+                console.error('STT error:', sttError);
+                return NextResponse.json(
+                    { error: 'Speech transcription failed', details: sttError },
+                    { status: 500 }
+                );
+            }
+
+            const sttData = await sttResponse.json();
+            transcript = sttData.text?.trim();
+        } catch (err) {
+            console.error('STT exception:', err);
+            return NextResponse.json({ error: `Transcription failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
         }
 
-        const sttData = await sttResponse.json();
-        transcript = sttData.text?.trim();
-    } catch (err) {
-        console.error('STT exception:', err);
-        return NextResponse.json({ error: `Transcription failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 });
-    }
-
-    if (!transcript) {
-        return NextResponse.json(
-            { error: 'no_speech', message: "I didn't hear anything. Try speaking a bit louder or closer to your mic." },
-            { status: 400 }
-        );
+        if (!transcript) {
+            return NextResponse.json(
+                { error: 'no_speech', message: "I didn't hear anything. Try speaking a bit louder or closer to your mic." },
+                { status: 400 }
+            );
+        }
     }
 
     // Step 2: LLM Reflection via Claude
     // Try Sonnet first, fall back to Haiku if overloaded
     const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'];
+    const systemPrompt = customSystemPrompt || MIRROR_SYSTEM_PROMPT;
     let reflection: string;
     try {
         let claudeResponse: Response | null = null;
@@ -199,7 +99,7 @@ export async function POST(req: NextRequest) {
                 body: JSON.stringify({
                     model,
                     max_tokens: 512,
-                    system: MIRROR_SYSTEM_PROMPT,
+                    system: systemPrompt,
                     messages: [{ role: 'user', content: transcript }],
                 }),
             });
@@ -267,22 +167,9 @@ export async function POST(req: NextRequest) {
 
     const audioBase64 = audioBuffer.toString('base64');
 
-    // Delete voice clones after successful TTS to free up every slot
-    // 1. Direct-delete the specific voice used (always works, even for inactive clones)
-    // 2. Sweep all remaining clones via list API (catches orphans from abandoned sessions)
-    // Must be awaited — Vercel serverless terminates execution after response is sent
-    if (provider === 'minimax') {
-        await deleteOneMiniMaxClone(MINIMAX_API_KEY!, MINIMAX_GROUP_ID!, voiceId);
-        await cleanupMiniMaxClones(MINIMAX_API_KEY!, MINIMAX_GROUP_ID!);
-    } else {
-        await deleteOneElevenLabsClone(ELEVENLABS_API_KEY, voiceId);
-        await cleanupElevenLabsClones(ELEVENLABS_API_KEY);
-    }
-
     return NextResponse.json({
         transcript,
         reflection,
         audio: audioBase64,
     });
 }
-

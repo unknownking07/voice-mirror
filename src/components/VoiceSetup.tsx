@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { useVoice } from '@/hooks/useVoice';
 
 function writeString(view: DataView, offset: number, str: string) {
     for (let i = 0; i < str.length; i++) {
@@ -58,6 +59,7 @@ interface VoiceSetupProps {
 }
 
 export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
+    const { setUserName } = useVoice();
     const [step, setStep] = useState<'intro' | 'recording' | 'uploading' | 'previewing' | 'pickVoice' | 'done'>('intro');
     const [name, setName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -254,261 +256,358 @@ export default function VoiceSetup({ onVoiceCloned }: VoiceSetupProps) {
     };
 
     const formatDuration = (s: number) => {
-        const mins = Math.floor(s / 60);
-        const secs = s % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+        const mins = Math.floor(s / 60).toString().padStart(2, '0');
+        const secs = (s % 60).toString().padStart(2, '0');
+        return `${mins}:${secs}`;
     };
 
-    return (
-        <div className="voice-setup">
-            <div className="setup-container">
-                <div className="meta-label" style={{ marginBottom: '1.5rem' }}>Voice Configuration</div>
-                <h1 className="setup-title">The Mirror</h1>
-                <audio ref={audioRef} />
+    const maxDuration = provider === 'minimax' ? 60 : 30;
 
-                {step === 'intro' && (
-                    <div className="setup-step">
-                        <p className="setup-description">
-                            To hear your own voice reflecting back, I need a sample of how you speak.
-                            Record at least {provider === 'minimax' ? '60' : '30'} seconds of natural speech — read something aloud,
-                            talk about your day, anything that sounds like <em>you</em>.
-                        </p>
-                        <input
-                            type="text"
-                            className="voice-name-input"
-                            placeholder="Your name (for the voice profile)"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                        />
-                        <div className="provider-select">
-                            <label className="settings-label">Voice Engine</label>
-                            <div className="provider-options">
-                                <button
-                                    className={`provider-option ${provider === 'elevenlabs' ? 'active' : ''}`}
-                                    onClick={() => setProvider('elevenlabs')}
-                                >
-                                    <span className="provider-name">{provider === 'elevenlabs' ? '✓ ' : ''}ElevenLabs</span>
-                                    <span className="provider-desc">Reliable, multilingual</span>
-                                </button>
-                                <button
-                                    className={`provider-option ${provider === 'minimax' ? 'active' : ''}`}
-                                    onClick={() => setProvider('minimax')}
-                                >
-                                    <span className="provider-name">{provider === 'minimax' ? '✓ ' : ''}MiniMax</span>
-                                    <span className="provider-desc">More identical voice</span>
+    // Visualizer bars
+    const bars = [
+        { delay: '0.1s', height: '15px' },
+        { delay: '0.3s', height: '35px' },
+        { delay: '0.2s', height: '50px' },
+        { delay: '0.5s', height: '25px' },
+        { delay: '0.4s', height: '45px' },
+        { delay: '0.6s', height: '30px' },
+        { delay: '0.1s', height: '20px' },
+        { delay: '0.3s', height: '40px' },
+    ];
+
+    return (
+        <div className="vs-page">
+            <div className="vs-backdrop-blur" />
+            <audio ref={audioRef} />
+
+            <span className="vs-subtitle">Initialization</span>
+            <h1 className="vs-title">Voice<br /><span>Profiling</span></h1>
+
+            {/* ── INTRO STEP ── */}
+            {step === 'intro' && (
+                <>
+                    <div className="vs-grid">
+                        <div className="vs-form-side">
+                            <div className="vs-input-group">
+                                <label className="vs-input-label">Your Designation</label>
+                                <input
+                                    type="text"
+                                    className="vs-text-input"
+                                    placeholder="Enter name..."
+                                    value={name}
+                                    onChange={(e) => {
+                                        setName(e.target.value);
+                                        setUserName(e.target.value);
+                                    }}
+                                />
+                            </div>
+
+                            <div className="vs-input-group">
+                                <label className="vs-input-label">Voice Engine</label>
+                                <div className="vs-engine-selector">
+                                    <button
+                                        className={`vs-engine-card ${provider === 'elevenlabs' ? 'active' : ''}`}
+                                        onClick={() => setProvider('elevenlabs')}
+                                    >
+                                        <div className="vs-engine-name">{provider === 'elevenlabs' ? '✓ ' : ''}ElevenLabs</div>
+                                        <div className="vs-engine-desc">Reliable, multilingual</div>
+                                    </button>
+                                    <button
+                                        className={`vs-engine-card ${provider === 'minimax' ? 'active' : ''}`}
+                                        onClick={() => setProvider('minimax')}
+                                    >
+                                        <div className="vs-engine-name">{provider === 'minimax' ? '✓ ' : ''}MiniMax</div>
+                                        <div className="vs-engine-desc">More identical voice</div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p className="vs-description">
+                                To create your mirror, we require a signature of your frequency. This sample
+                                will calibrate the response algorithm to your unique timbre.
+                            </p>
+                        </div>
+
+                        <div className="vs-recording-zone">
+                            <span className="vs-subtitle" style={{ marginBottom: '2rem' }}>Acoustic Calibration</span>
+                            <div className="vs-timer">00:00 / 00:{maxDuration.toString().padStart(2, '0')}</div>
+                            <div className="vs-visualizer vs-visualizer-idle">
+                                {bars.map((bar, i) => (
+                                    <div
+                                        key={i}
+                                        className="vs-bar"
+                                        style={{ animationDelay: bar.delay, height: bar.height, opacity: 0.2 }}
+                                    />
+                                ))}
+                            </div>
+                            <p className="vs-prompt-text">
+                                &ldquo;Read this naturally: My voice is a reflection of my inner state.
+                                I am here to observe the bridge between thought and sound...&rdquo;
+                            </p>
+                            <div className="vs-zone-actions">
+                                <button className="vs-bracket-btn" onClick={handlePickVoice}>
+                                    [ SKIP — USE PRESET ]
                                 </button>
                             </div>
                         </div>
+                    </div>
+
+                    <div className="vs-action-footer">
                         <button
-                            className="btn btn-primary"
+                            className="vs-control-pill"
                             onClick={() => setStep('recording')}
                             disabled={!name.trim()}
                         >
-                            I&apos;m Ready
+                            <span className="vs-control-text">I&apos;M READY</span>
+                            <div className="vs-control-dot" />
                         </button>
-                        <div className="skip-clone">
-                            <button className="btn btn-link" onClick={handlePickVoice}>
-                                Skip — use a preset voice instead
-                            </button>
-                        </div>
                     </div>
-                )}
+                </>
+            )}
 
-                {step === 'recording' && (
-                    <div className="setup-step">
-                        <p className="setup-description">
-                            Speak naturally for at least {provider === 'minimax' ? '60' : '30'} seconds. A quiet room works best.
-                        </p>
-
-                        <details className="read-aloud-script">
-                            <summary className="read-aloud-toggle">
-                                📖 Need something to read? Tap here
-                            </summary>
-                            <div className="read-aloud-text">
-                                {provider === 'minimax' ? (
-                                    <>
-                                        <p>I&apos;ve been thinking a lot lately about the things that make life interesting. It&apos;s not always the big moments — sometimes it&apos;s just a quiet morning with a cup of coffee, watching the light change through the window.</p>
-                                        <p>Yesterday I went for a walk and noticed things I usually rush past. The sound of leaves, someone laughing in the distance, the way the sky looks right before sunset. It made me realize how much I miss when I&apos;m stuck in my own head.</p>
-                                        <p>I think the best conversations happen when you&apos;re not trying too hard. When you just let yourself talk about whatever comes to mind. Like right now — I&apos;m not performing, I&apos;m just being myself. And honestly, that&apos;s probably the hardest thing to do sometimes.</p>
-                                        <p>If I could give advice to my younger self, I&apos;d say: don&apos;t rush. The things that matter will find you. And the ones that don&apos;t? You won&apos;t even remember them a year from now.</p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p>I&apos;ve been thinking about what makes a good day. It&apos;s usually not the big things — it&apos;s a quiet moment, a conversation that surprised me, or just feeling like I was actually present for once.</p>
-                                        <p>Sometimes the best thing you can do is slow down and notice what&apos;s around you. The sounds, the light, the way the air feels. It&apos;s all there, waiting for you to pay attention.</p>
-                                    </>
-                                )}
+            {/* ── RECORDING STEP ── */}
+            {step === 'recording' && (
+                <>
+                    <div className="vs-grid">
+                        <div className="vs-form-side">
+                            <div className="vs-input-group">
+                                <label className="vs-input-label">Profile</label>
+                                <div className="vs-text-input vs-readonly">{name}</div>
                             </div>
-                        </details>
 
-                        <div className="recording-controls">
-                            {!isRecording && !recordedBlob && (
-                                <div className="record-options">
-                                    <button className="btn btn-record" onClick={handleStartRecording}>
-                                        <span className="record-dot"></span>
-                                        Start Recording
+                            <div className="vs-input-group">
+                                <label className="vs-input-label">Engine</label>
+                                <div className="vs-text-input vs-readonly" style={{ textTransform: 'uppercase', fontSize: '0.9rem', letterSpacing: '0.05em' }}>
+                                    {provider === 'elevenlabs' ? 'ElevenLabs' : 'MiniMax'}
+                                </div>
+                            </div>
+
+                            <details className="vs-read-aloud">
+                                <summary className="vs-read-aloud-toggle">
+                                    📖 Need something to read? Tap here
+                                </summary>
+                                <div className="vs-read-aloud-text">
+                                    {provider === 'minimax' ? (
+                                        <>
+                                            <p>I&apos;ve been thinking a lot lately about the things that make life interesting. It&apos;s not always the big moments — sometimes it&apos;s just a quiet morning with a cup of coffee, watching the light change through the window.</p>
+                                            <p>Yesterday I went for a walk and noticed things I usually rush past. The sound of leaves, someone laughing in the distance, the way the sky looks right before sunset. It made me realize how much I miss when I&apos;m stuck in my own head.</p>
+                                            <p>I think the best conversations happen when you&apos;re not trying too hard. When you just let yourself talk about whatever comes to mind. Like right now — I&apos;m not performing, I&apos;m just being myself.</p>
+                                            <p>If I could give advice to my younger self, I&apos;d say: don&apos;t rush. The things that matter will find you.</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p>I&apos;ve been thinking about what makes a good day. It&apos;s usually not the big things — it&apos;s a quiet moment, a conversation that surprised me, or just feeling like I was actually present for once.</p>
+                                            <p>Sometimes the best thing you can do is slow down and notice what&apos;s around you. The sounds, the light, the way the air feels. It&apos;s all there, waiting for you to pay attention.</p>
+                                        </>
+                                    )}
+                                </div>
+                            </details>
+
+                            {cloneError && (
+                                <div className="vs-clone-fallback">
+                                    <p className="vs-fallback-text">
+                                        Voice cloning requires an ElevenLabs paid plan ($5/mo).
+                                        You can still use the Mirror with a preset voice:
+                                    </p>
+                                    <button className="vs-bracket-btn" onClick={handlePickVoice}>
+                                        [ CHOOSE PRESET VOICE ]
                                     </button>
-                                    <div className="divider-text">or</div>
-                                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                                        Upload Audio File
-                                    </button>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept="audio/*"
-                                        onChange={handleFileUpload}
-                                        style={{ display: 'none' }}
-                                    />
                                 </div>
                             )}
+                        </div>
 
-                            {isRecording && (
-                                <div className="recording-active">
-                                    <div className="recording-indicator">
-                                        <span className="pulse-dot"></span>
-                                        <span className="recording-time">{formatDuration(duration)}</span>
+                        <div className="vs-recording-zone">
+                            <span className="vs-subtitle" style={{ marginBottom: '2rem' }}>Acoustic Calibration</span>
+
+                            {/* Not recording yet, no blob */}
+                            {!isRecording && !recordedBlob && (
+                                <>
+                                    <div className="vs-timer">00:00 / 00:{maxDuration.toString().padStart(2, '0')}</div>
+                                    <div className="vs-visualizer vs-visualizer-idle">
+                                        {bars.map((bar, i) => (
+                                            <div key={i} className="vs-bar" style={{ animationDelay: bar.delay, height: bar.height, opacity: 0.2 }} />
+                                        ))}
                                     </div>
-                                    <p className="recording-hint">
-                                        {duration < (provider === 'minimax' ? 60 : 30)
-                                            ? `Keep going... ${(provider === 'minimax' ? 60 : 30) - duration}s more`
+                                    <p className="vs-prompt-text">
+                                        Speak naturally for at least {maxDuration} seconds. A quiet room works best.
+                                    </p>
+                                    <div className="vs-zone-actions">
+                                        <button className="vs-bracket-btn" onClick={handleStartRecording}>
+                                            [ BEGIN RECORDING ]
+                                        </button>
+                                        <button className="vs-bracket-btn" onClick={() => fileInputRef.current?.click()}>
+                                            [ UPLOAD FILE ]
+                                        </button>
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept="audio/*"
+                                            onChange={handleFileUpload}
+                                            style={{ display: 'none' }}
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Currently recording */}
+                            {isRecording && (
+                                <>
+                                    <div className="vs-timer">{formatDuration(duration)} / 00:{maxDuration.toString().padStart(2, '0')}</div>
+                                    <div className="vs-visualizer">
+                                        {bars.map((bar, i) => (
+                                            <div key={i} className="vs-bar" style={{ animationDelay: bar.delay, height: bar.height }} />
+                                        ))}
+                                    </div>
+                                    <p className="vs-prompt-text">
+                                        {duration < maxDuration
+                                            ? `Keep going... ${maxDuration - duration}s more`
                                             : 'Good length! Stop when ready.'}
                                     </p>
                                     <button
-                                        className="btn btn-stop"
+                                        className="vs-bracket-btn vs-stop-btn"
                                         onClick={handleStopRecording}
-                                        disabled={duration < (provider === 'minimax' ? 60 : 30)}
+                                        disabled={duration < maxDuration}
                                     >
-                                        Stop Recording
+                                        [ STOP RECORDING ]
                                     </button>
-                                </div>
+                                </>
                             )}
 
+                            {/* Recording done */}
                             {!isRecording && recordedBlob && (
-                                <div className="recording-done">
-                                    <p className="recording-ready">✓ Audio ready</p>
-                                    <div className="recording-actions">
-                                        <button className="btn btn-secondary" onClick={() => { setRecordedBlob(null); }}>
-                                            Re-record
-                                        </button>
-                                        <button className="btn btn-primary" onClick={handleClone}>
-                                            Clone My Voice
+                                <>
+                                    <div className="vs-timer">✓ Audio ready</div>
+                                    <div className="vs-visualizer vs-visualizer-idle">
+                                        {bars.map((bar, i) => (
+                                            <div key={i} className="vs-bar" style={{ animationDelay: bar.delay, height: bar.height, opacity: 0.4 }} />
+                                        ))}
+                                    </div>
+                                    <div className="vs-zone-actions">
+                                        <button className="vs-bracket-btn" onClick={() => setRecordedBlob(null)}>
+                                            [ RESTART SAMPLE ]
                                         </button>
                                     </div>
-                                </div>
+                                </>
                             )}
                         </div>
+                    </div>
 
-                        {cloneError && (
-                            <div className="clone-fallback">
-                                <p className="fallback-text">
-                                    Voice cloning requires an ElevenLabs paid plan ($5/mo).
-                                    You can still use the Mirror with a preset voice:
-                                </p>
-                                <button className="btn btn-secondary" onClick={handlePickVoice}>
-                                    Choose a Preset Voice →
-                                </button>
-                            </div>
+                    <div className="vs-action-footer">
+                        <button className="vs-bracket-btn" onClick={() => { setStep('intro'); setRecordedBlob(null); }} style={{ marginRight: 'auto' }}>
+                            [ ← BACK ]
+                        </button>
+                        {!isRecording && recordedBlob && (
+                            <button className="vs-control-pill" onClick={handleClone}>
+                                <span className="vs-control-text">CLONE MY VOICE</span>
+                                <div className="vs-control-dot" />
+                            </button>
                         )}
                     </div>
-                )}
+                </>
+            )}
 
-                {step === 'uploading' && (
-                    <div className="setup-step">
-                        <div className="loading-state">
-                            <div className="breathing-circle"></div>
-                            <p className="loading-text">Cloning your voice...</p>
-                            <p className="loading-subtext">This usually takes 15-30 seconds</p>
-                        </div>
-                    </div>
-                )}
+            {/* ── UPLOADING STEP ── */}
+            {step === 'uploading' && (
+                <div className="vs-center-state">
+                    <div className="vs-breathing-circle" />
+                    <p className="vs-loading-label">Cloning your voice...</p>
+                    <p className="vs-loading-sub">This usually takes 15-30 seconds</p>
+                </div>
+            )}
 
-                {step === 'previewing' && (
-                    <div className="setup-step">
-                        <p className="setup-description">
-                            Your voice has been cloned. Listen to a preview to make sure it sounds like you.
-                        </p>
-                        <div className="preview-actions">
-                            <button className="btn btn-secondary" onClick={handlePreview} disabled={loadingPreview}>
-                                {loadingPreview ? '⏳ Generating preview...' : '🔊 Play Preview'}
-                            </button>
-                            <button className="btn btn-primary" onClick={handleConfirm} disabled={loadingPreview}>
-                                Sounds Like Me →
-                            </button>
-                        </div>
-                        {loadingPreview && (
-                            <p className="preview-hint">This may take a few seconds</p>
-                        )}
-                        {!loadingPreview && previewCount >= 1 && (
-                            <p className="preview-hint">Tap preview again — each play sounds slightly different</p>
-                        )}
-                        <button
-                            className="btn btn-link"
-                            onClick={() => { deleteClone(); setStep('recording'); setRecordedBlob(null); setVoiceId(null); }}
-                        >
-                            Try a different recording
+            {/* ── PREVIEWING STEP ── */}
+            {step === 'previewing' && (
+                <div className="vs-center-state">
+                    <p className="vs-loading-label" style={{ marginBottom: '1.5rem' }}>
+                        Your voice has been cloned. Listen to a preview.
+                    </p>
+                    <div className="vs-zone-actions" style={{ flexDirection: 'column', gap: '1rem' }}>
+                        <button className="vs-control-pill" onClick={handlePreview} disabled={loadingPreview}>
+                            <span className="vs-control-text">
+                                {loadingPreview ? '⏳ GENERATING...' : '🔊 PLAY PREVIEW'}
+                            </span>
+                            <div className="vs-control-dot" />
+                        </button>
+                        <button className="vs-control-pill" onClick={handleConfirm} disabled={loadingPreview}>
+                            <span className="vs-control-text">SOUNDS LIKE ME</span>
+                            <div className="vs-control-dot" />
                         </button>
                     </div>
-                )}
-
-                {step === 'pickVoice' && (
-                    <div className="setup-step">
-                        <p className="setup-description">
-                            Pick a voice that feels right. You can always clone your own voice later
-                            with an ElevenLabs Starter plan.
+                    {!loadingPreview && previewCount >= 1 && (
+                        <p className="vs-loading-sub" style={{ marginTop: '1rem' }}>
+                            Tap preview again — each play sounds slightly different
                         </p>
+                    )}
+                    <button
+                        className="vs-bracket-btn"
+                        style={{ marginTop: '2rem' }}
+                        onClick={() => { deleteClone(); setStep('recording'); setRecordedBlob(null); setVoiceId(null); }}
+                    >
+                        [ TRY DIFFERENT RECORDING ]
+                    </button>
+                </div>
+            )}
 
-                        {loadingVoices ? (
-                            <div className="loading-state">
-                                <div className="breathing-circle"></div>
-                                <p className="loading-text">Loading voices...</p>
-                            </div>
-                        ) : (
-                            <div className="voice-grid">
-                                {voices.map((voice) => (
-                                    <button
-                                        key={voice.voice_id}
-                                        className={`voice-card ${selectedVoice?.voice_id === voice.voice_id ? 'selected' : ''}`}
-                                        onClick={() => setSelectedVoice(voice)}
-                                    >
-                                        <div className="voice-card-info">
-                                            <span className="voice-name">{voice.name}</span>
-                                            <span className="voice-meta">
-                                                {voice.gender}{voice.accent ? ` · ${voice.accent}` : ''}
-                                            </span>
-                                        </div>
-                                        {voice.preview_url && (
-                                            <button
-                                                className="voice-preview-btn"
-                                                onClick={(e) => { e.stopPropagation(); handlePreviewVoice(voice); }}
-                                            >
-                                                {playingPreview === voice.voice_id ? '⏸' : '▶'}
-                                            </button>
-                                        )}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+            {/* ── PICK VOICE STEP ── */}
+            {step === 'pickVoice' && (
+                <div className="vs-pick-voice">
+                    <p className="vs-description" style={{ marginBottom: '1.5rem' }}>
+                        Pick a voice that feels right. You can always clone your own voice later
+                        with an ElevenLabs Starter plan.
+                    </p>
 
+                    {loadingVoices ? (
+                        <div className="vs-center-state">
+                            <div className="vs-breathing-circle" />
+                            <p className="vs-loading-label">Loading voices...</p>
+                        </div>
+                    ) : (
+                        <div className="vs-voice-grid">
+                            {voices.map((voice) => (
+                                <button
+                                    key={voice.voice_id}
+                                    className={`vs-voice-card ${selectedVoice?.voice_id === voice.voice_id ? 'selected' : ''}`}
+                                    onClick={() => setSelectedVoice(voice)}
+                                >
+                                    <div className="vs-voice-card-info">
+                                        <span className="vs-voice-name">{voice.name}</span>
+                                        <span className="vs-voice-meta">
+                                            {voice.gender}{voice.accent ? ` · ${voice.accent}` : ''}
+                                        </span>
+                                    </div>
+                                    {voice.preview_url && (
+                                        <button
+                                            className="vs-voice-preview-btn"
+                                            onClick={(e) => { e.stopPropagation(); handlePreviewVoice(voice); }}
+                                        >
+                                            {playingPreview === voice.voice_id ? '⏸' : '▶'}
+                                        </button>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="vs-action-footer" style={{ marginTop: '2rem' }}>
+                        <button className="vs-bracket-btn" onClick={() => setStep('intro')}>
+                            [ ← BACK ]
+                        </button>
                         {selectedVoice && (
-                            <div className="pick-actions">
-                                <button className="btn btn-primary" onClick={handleConfirmPreset}>
-                                    Use &ldquo;{selectedVoice.name}&rdquo; →
-                                </button>
-                            </div>
+                            <button className="vs-control-pill" onClick={handleConfirmPreset}>
+                                <span className="vs-control-text">USE &ldquo;{selectedVoice.name}&rdquo;</span>
+                                <div className="vs-control-dot" />
+                            </button>
                         )}
-
-                        <button className="btn btn-link" onClick={() => setStep('intro')}>
-                            ← Back
-                        </button>
                     </div>
-                )}
+                </div>
+            )}
 
-                {(error || recorderError) && !cloneError && (
-                    <div className="error-message">
-                        {error || recorderError}
-                    </div>
-                )}
-            </div>
+            {/* ── ERROR ── */}
+            {(error || recorderError) && !cloneError && (
+                <div className="vs-error">
+                    {error || recorderError}
+                </div>
+            )}
         </div>
     );
 }

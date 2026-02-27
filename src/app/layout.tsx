@@ -1,10 +1,20 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
+import { VoiceProvider } from '@/contexts/VoiceContext';
+import AppShell from '@/components/AppShell';
 import './globals.css';
 
+export const viewport: Viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: 'cover',
+};
+
 export const metadata: Metadata = {
-    title: 'Mirror — Hear Yourself Think',
-    description: 'Speak your thoughts. Hear them reflected back in your own voice.',
+    title: 'MIRROR MIND | Sonic Wellness',
+    description: 'Guided reflections, journaling, affirmations, and breathing exercises — all in your own cloned voice.',
 };
 
 export default function RootLayout({
@@ -41,7 +51,11 @@ export default function RootLayout({
                 <div className="vignette" />
                 {/* Ambient background glow */}
                 <div className="ambient-glow" />
-                {children}
+                <VoiceProvider>
+                    <AppShell>
+                        {children}
+                    </AppShell>
+                </VoiceProvider>
             </body>
         </html>
     );
