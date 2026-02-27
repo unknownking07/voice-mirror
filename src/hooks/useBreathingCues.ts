@@ -158,7 +158,7 @@ export function useBreathingCues({ voiceId, provider, speed, enabled }: UseBreat
 
     const stopCue = useCallback(() => {
         // Pause all cue audios
-        for (const audio of cueAudios.current.values()) {
+        for (const audio of Array.from(cueAudios.current.values())) {
             audio.pause();
             audio.currentTime = 0;
         }
@@ -213,7 +213,7 @@ export function useBreathingCues({ voiceId, provider, speed, enabled }: UseBreat
     // Cleanup on unmount
     useEffect(() => {
         return () => {
-            for (const audio of cueAudios.current.values()) {
+            for (const audio of Array.from(cueAudios.current.values())) {
                 audio.pause();
             }
             cueAudios.current.clear();
